@@ -1,0 +1,39 @@
+{
+  "name": "token-tiger-cli-v1",
+  "version": "0.0.0",
+  "description": "Token Tiger CLI — Commander, ESM, Standard, Mocha, c8.",
+  "main": "token-tiger-cli.js",
+  "type": "module",
+  "scripts": {
+    "test": "c8 --reporter=text mocha --exit --timeout 15000 --recursive test/unit",
+    "test:integration": "mocha --exit --timeout 25000 test/integration/",
+    "lint": "standard --env mocha --fix",
+    "coverage": "c8 --reporter=html mocha --exit --timeout 15000 --recursive test/unit/"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "1.14.0",
+    "cli-table": "0.3.11",
+    "collect.js": "4.36.1",
+    "commander": "12.1.0",
+    "dotenv": "17.2.3",
+    "shelljs": "0.8.5"
+  },
+  "devDependencies": {
+    "c8": "10.1.2",
+    "chai": "5.1.1",
+    "mocha": "10.7.3",
+    "semantic-release": "24.1.2",
+    "sinon": "19.0.2",
+    "standard": "17.1.2"
+  },
+  "release": {
+    "publish": [
+      {
+        "path": "@semantic-release/npm",
+        "npmPublish": false
+      }
+    ]
+  }
+}
