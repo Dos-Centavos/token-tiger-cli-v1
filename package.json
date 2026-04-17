@@ -18,7 +18,8 @@
     "collect.js": "4.36.1",
     "commander": "12.1.0",
     "dotenv": "17.2.3",
-    "shelljs": "0.8.5"
+    "shelljs": "0.8.5",
+    "tus-js-client": "^4.2.1"
   },
   "devDependencies": {
     "c8": "10.1.2",
