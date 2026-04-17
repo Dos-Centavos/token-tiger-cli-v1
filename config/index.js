@@ -8,7 +8,8 @@ import 'dotenv/config'
 const config = {
   apiBaseUrl: process.env.TOKEN_TIGER_API_BASE_URL || 'http://localhost:5001',
   defaultToken: process.env.TOKEN_TIGER_TOKEN || '',
-  logLevel: process.env.TOKEN_TIGER_LOG_LEVEL || 'info'
+  logLevel: process.env.TOKEN_TIGER_LOG_LEVEL || 'info',
+  inboxGalleryId: process.env.TOKEN_TIGER_INBOX_GALLERY || ''
 }
 
 export default config
