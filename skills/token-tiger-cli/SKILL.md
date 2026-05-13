@@ -2,12 +2,13 @@
 name: token-tiger-cli
 description: >-
   Documents the token-tiger-cli-v1 Node.js CLI (program name token-tiger): login,
-  create-user, info, check-balance, and create-token (NFT creation via Tus upload,
-  metadata, tokenization). Covers environment variables, session file at
-  user-data/user.json, required and optional flags, API endpoints, and typical
-  workflows. Use when running, explaining, or automating this CLI; debugging Token
-  Tiger API integration; Tus uploads, NFT minting, or credit checks; or when the
-  user mentions token-tiger, Token Tiger, or this repository's CLI commands.
+  create-user, info, check-balance, create-token, create-collection,
+  create-sharable-collection, show-collections, show-collection-tokens, and
+  export-token. Covers environment variables, session file at user-data/user.json,
+  required and optional flags, API endpoints, and typical workflows. Use when
+  running, explaining, or automating this CLI; debugging Token Tiger API
+  integration; Tus uploads, NFT minting, exporting tokens, credit checks; or when
+  the user mentions token-tiger, Token Tiger, or this repository's CLI commands.
 ---
 
 # Token Tiger CLI
@@ -37,7 +38,7 @@ Note: `.env.example` does not list TOKEN_TIGER_INBOX_GALLERY; set it when using 
 
 - Location: `user-data/user.json` (paths resolved in `src/lib/paths.js`).
 - Created or updated by **login** and **create-user**.
-- Read by **info**, **check-balance**, and **create-token**.
+- Read by most commands including **info**, **check-balance**, **create-token**, **create-collection**, **create-sharable-collection**, **show-collections**, **show-collection-tokens**, and **export-token**.
 - Holds JWT, user record (including email and id fields), and project arrays. Treat as sensitive; login and create-user print the JWT to stdout.
 
 ## Commands
@@ -75,6 +76,46 @@ Invocation pattern: `node token-tiger-cli.js SUBCOMMAND [options]`
 - If collection is omitted: loads collections, picks NFT collections (tokensType 1), or creates a collection and may update the session file.
 - Gallery step runs only when `--skip-gallery` is not set and TOKEN_TIGER_INBOX_GALLERY is non-empty.
 
+### create-collection
+
+- Creates a new collection owned by the logged-in user.
+- Required flags: `-n` or `--name` (collection label).
+- Optional flags: `-t` or `--tokens-type` (`1` for NFT collections; `65` for fungible tokens, depending on server support).
+- Requires prior login or create-user so JWT and user id exist in session.
+- Updates the session file with the new project/collection id.
+
+### create-sharable-collection
+
+- Creates a sharable NFT collection (a public-id based collection intended for sharing).
+- Required flags: `-n` or `--name` (collection label).
+- Optional flags: `--public` (collection is publicly discoverable).
+- Requires prior login or create-user so JWT and user id exist in session.
+- Updates the session file with sharable collection information returned by the API.
+
+### show-collections
+
+- Lists both:
+  - Collections owned by the logged-in user (projects), and
+  - “Sharable collections” associated with the user.
+- Requires prior login or create-user so JWT and user id exist in session.
+
+### show-collection-tokens
+
+- Lists tokens for either:
+  - a collection id (24 hex / Mongo object id), or
+  - a sharable public id (digits).
+- Required flags: `-i` or `--id <string>`.
+- Requires prior login or create-user so JWT and user id exist in session.
+
+### export-token
+
+- Exports a token from a collection (or sharable collection) to a destination address.
+- Required flags:
+  - `-c` or `--collection <id>` (collection id holding the token; can be a 24-hex id or sharable public id)
+  - `-t` or `--token-id <string>` (token id to export/send)
+  - `-a` or `--address <string>` (destination `simpleledger:` or `bitcoincash:` address)
+- Requires prior login or create-user so JWT and user id exist in session.
+
 ## HTTP API surface
 
 Commands use the configured API base URL with no trailing slash on the base path. Authentication uses `Authorization: Bearer` plus the session JWT except where noted.
@@ -84,6 +125,14 @@ Commands use the configured API base URL with no trailing slash on the base path
 | login | POST | `/auth` | JSON body: email, password. Response includes token and user. |
 | create-user | POST | `/users` | JSON body: user object with email, password. |
 | check-balance | GET | `/users/:userId` | Bearer JWT. Response includes user.credit.available. |
+| create-collection | POST | `/projects/` | Bearer JWT. JSON body includes name and optionally tokensType. |
+| create-sharable-collection | POST | `/users/share/nft/create` | Bearer JWT. Creates sharable collection; may return updated user payload. |
+| show-collections | GET | `/projects/` | Bearer JWT. Owned collections. |
+| show-collections | GET | `/users/share/nft/collections/` | Bearer JWT. Sharable collections. |
+| show-collection-tokens | POST | `/token/project-tokens` | Bearer JWT. Used when id is a 24-hex collection id. |
+| show-collection-tokens | GET | `/users/share/nft/tokens/:publicId` | Bearer JWT. Used when id is a sharable public id. |
+| export-token | POST | `/token/export/project` | Bearer JWT. Used when collection id is a 24-hex id. |
+| export-token | POST | `/token/export/sharable` | Bearer JWT. Used when collection id is a sharable public id. |
 | create-token | GET | `/projects/` | Lists projects for collection resolution. |
 | create-token | POST | `/projects/` | Creates NFT collection when none exist. |
 | create-token | Tus | `/files` | Resumable upload via tus-js-client, not a plain JSON POST. |
@@ -98,6 +147,9 @@ Session file `user-data/user.json` stores JWT, user document (id, email, project
 1. New account: create-user, then info or check-balance.
 2. Existing account: login, then check-balance or create-token.
 3. Configuration check: info.
+4. Create a collection explicitly: create-collection (or create-sharable-collection), then create-token with `--collection`.
+5. Inspect assets: show-collections, then show-collection-tokens for a chosen id.
+6. Send/export a token: export-token with collection id, token id, and destination address.
 
 ## Operational notes
 
