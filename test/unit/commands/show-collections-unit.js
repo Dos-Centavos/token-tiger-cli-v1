@@ -45,6 +45,23 @@ describe('#show-collections.js', () => {
       assert.equal(out[0]._id, 'p1')
     })
 
+    it('should return an empty list for a non-array and drop null rows', () => {
+      assert.deepEqual(
+        filterProjectsOwnedByUser(null, sessionWithProjects, 'user-a'),
+        []
+      )
+      assert.deepEqual(
+        filterProjectsOwnedByUser([], sessionWithProjects, null),
+        []
+      )
+      const out = filterProjectsOwnedByUser(
+        [null, { _id: 'p1', owner: 'user-a' }],
+        sessionWithProjects,
+        'user-a'
+      )
+      assert.lengthOf(out, 1)
+    })
+
     it('should keep projects without owner field when id is in session', () => {
       const list = [
         { _id: 'p-in-session', projectLabel: 'Legacy', tokensType: 65 },
@@ -66,6 +83,13 @@ describe('#show-collections.js', () => {
         resolveProjectOwnerId({ user: { _id: 'u9' } }),
         'u9'
       )
+    })
+
+    it('should resolve a string, a number, an alternate id, and a missing project', () => {
+      assert.equal(resolveProjectOwnerId(null), null)
+      assert.equal(resolveProjectOwnerId({ user: 'owner-s' }), 'owner-s')
+      assert.equal(resolveProjectOwnerId({ user: 7 }), '7')
+      assert.equal(resolveProjectOwnerId({ user: { id: 'only' } }), 'only')
     })
   })
 
@@ -213,6 +237,53 @@ describe('#show-collections.js', () => {
           success: true,
           nftSharedCollections: []
         }
+      })
+
+      const result = await uut.run({})
+
+      assert.equal(result, true)
+      const out = console.log.args.map((a) => a.join(' ')).join('\n')
+      assert.include(out, '(none)')
+    })
+
+    it('should render blank cells and unsorted labels from missing fields', async () => {
+      sandbox.stub(console, 'log')
+      sandbox.stub(uut.appUtils, 'getSessionInfo').resolves(mockSessionCheckBalance)
+
+      const get = sandbox.stub(uut.axios, 'get')
+      get.onFirstCall().resolves({
+        data: {
+          projects: [
+            { owner: 'user-id-1' },
+            { owner: 'user-id-1', _id: null, projectLabel: null, tokensType: null }
+          ]
+        }
+      })
+      get.onSecondCall().resolves({
+        data: {
+          nftSharedCollections: [
+            { isPublic: false, hidden: true },
+            {}
+          ]
+        }
+      })
+
+      const result = await uut.run({})
+
+      assert.equal(result, true)
+      const out = console.log.args.map((a) => a.join(' ')).join('\n')
+      assert.include(out, 'yes')
+      assert.include(out, 'no')
+    })
+
+    it('should treat a missing project list and a non-array sharable payload as empty', async () => {
+      sandbox.stub(console, 'log')
+      sandbox.stub(uut.appUtils, 'getSessionInfo').resolves(mockSessionCheckBalance)
+
+      const get = sandbox.stub(uut.axios, 'get')
+      get.onFirstCall().resolves({ data: { projects: null } })
+      get.onSecondCall().resolves({
+        data: { nftSharedCollections: { bad: true } }
       })
 
       const result = await uut.run({})

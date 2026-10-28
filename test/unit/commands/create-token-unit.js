@@ -5,7 +5,10 @@
 import { assert } from 'chai'
 import sinon from 'sinon'
 
-import CreateToken from '../../../src/commands/create-token.js'
+import CreateToken, {
+  pickLastCollection,
+  resolveProjectOwnerId
+} from '../../../src/commands/create-token.js'
 
 const uut = new CreateToken()
 
@@ -73,6 +76,21 @@ describe('#create-token.js', () => {
       sandbox.stub(uut.fs, 'existsSync').returns(true)
       assert.equal(uut.validateFlags(baseFlags), true)
     })
+
+    it('should name a missing main file when the path is omitted', () => {
+      assert.throws(
+        () => uut.validateFlags({ ...baseFlags, file: '' }),
+        /Main asset file not found: \(missing\)/
+      )
+    })
+
+    it('should name a missing thumbnail when the path is omitted', () => {
+      sandbox.stub(uut.fs, 'existsSync').returns(true)
+      assert.throws(
+        () => uut.validateFlags({ ...baseFlags, thumbnail: '' }),
+        /Thumbnail file not found: \(missing\)/
+      )
+    })
   })
 
   describe('#buildMetadataModel', () => {
@@ -105,6 +123,20 @@ describe('#create-token.js', () => {
       })
       assert.equal(m.isPubliclyAvailable, true)
       assert.equal(m.meta.filePreview, 'cid-1')
+    })
+
+    it('should use unknow when the asset path has no extension', () => {
+      const m = uut.buildMetadataModel({
+        title: 'Main',
+        projectId: 'p1',
+        filePath: '/tmp/noext',
+        userId: 'u1',
+        email: 'e@e.com',
+        isThumbnail: false,
+        isPubliclyAvailable: false,
+        filePreview: ''
+      })
+      assert.deepEqual(m.meta.fileData, ['unknow'])
     })
 
     it('should set isPubliclyAvailable false for main when flag is false', () => {
@@ -534,6 +566,201 @@ describe('#create-token.js', () => {
       assert(Array.isArray(session.user.projects))
       assert.include(session.user.projects, 'brand-new')
     })
+
+    it('should return null for an empty pick or a missing project', () => {
+      assert.equal(pickLastCollection([]), null)
+      assert.equal(resolveProjectOwnerId(null), null)
+      assert.equal(resolveProjectOwnerId(undefined), null)
+    })
+
+    it('should resolve owner from a string, a number, and nested user ids', async () => {
+      const fetch = sandbox.stub(uut, 'fetchUserProjects')
+      fetch.onCall(0).resolves([{ _id: 'p-num', user: 42 }])
+      fetch.onCall(1).resolves([{ _id: 'p-str', user: 'user-1' }])
+      fetch.onCall(2).resolves([{ _id: 'p-oid', user: { _id: 'user-1' } }])
+      fetch.onCall(3).resolves([{ _id: 'p-id', user: { id: 'user-1' } }])
+
+      const base = {
+        base: 'http://x',
+        jwt: 'j',
+        session: sessionWithUser(),
+        user: { _id: 'user-1', email: 'a@b.com' }
+      }
+      const numeric = await uut.resolveCollectionId({
+        ...base,
+        flags: { collection: 'p-num' },
+        user: { _id: '42', email: 'a@b.com' }
+      })
+      const asString = await uut.resolveCollectionId({
+        ...base,
+        flags: { collection: 'p-str' }
+      })
+      const nestedId = await uut.resolveCollectionId({
+        ...base,
+        flags: { collection: 'p-oid' }
+      })
+      const nestedAlt = await uut.resolveCollectionId({
+        ...base,
+        flags: { collection: 'p-id' }
+      })
+
+      assert.equal(numeric.projectId, 'p-num')
+      assert.equal(numeric.projectLabel, 'p-num')
+      assert.equal(asString.projectLabel, 'p-str')
+      assert.equal(nestedId.projectLabel, 'p-oid')
+      assert.equal(nestedAlt.projectLabel, 'p-id')
+    })
+
+    it('should throw when the projects payload is not an array', async () => {
+      sandbox.stub(uut, 'fetchUserProjects').resolves(null)
+
+      try {
+        await uut.resolveCollectionId({
+          base: 'http://x',
+          jwt: 'j',
+          flags: { collection: 'missing' },
+          session: sessionWithUser(),
+          user: { _id: 'user-1', email: 'a@b.com' }
+        })
+        assert.fail('expected throw')
+      } catch (e) {
+        assert.include(e.message, 'not found')
+      }
+    })
+
+    it('should create a collection when the projects payload is not a list', async () => {
+      sandbox.stub(uut, 'fetchUserProjects').resolves({ not: 'a list' })
+      sandbox.stub(uut.appUtils, 'saveUserData').resolves()
+      sandbox.stub(uut.axios, 'post').resolves({
+        data: {
+          success: true,
+          project: { _id: 'from-bad-list', projectLabel: 'owner' }
+        }
+      })
+
+      const r = await uut.resolveCollectionId({
+        base: 'http://x',
+        jwt: 'j',
+        flags: {},
+        session: sessionWithUser({
+          projects: [],
+          user: { _id: 'user-1', email: 'owner@example.com', projects: [] }
+        }),
+        user: { _id: 'user-1', email: 'owner@example.com' }
+      })
+
+      assert.equal(r.projectId, 'from-bad-list')
+    })
+
+    it('should treat a missing user id as no owner match', async () => {
+      sandbox.stub(uut, 'fetchUserProjects').resolves([
+        { _id: 'p', tokensType: 1, owner: 'someone', projectLabel: 'X' }
+      ])
+      sandbox.stub(uut.appUtils, 'saveUserData').resolves()
+      const post = sandbox.stub(uut.axios, 'post').resolves({
+        data: {
+          success: true,
+          project: { _id: 'created', projectLabel: 'plainuser' }
+        }
+      })
+
+      const r = await uut.resolveCollectionId({
+        base: 'http://x',
+        jwt: 'j',
+        flags: {},
+        session: { JWT: 'j', projects: [], user: { email: 'plainuser' } },
+        user: { email: 'plainuser' }
+      })
+
+      assert.equal(r.projectId, 'created')
+      assert.equal(post.firstCall.args[1].project.projectLabel, 'plainuser')
+    })
+
+    it('should sort undated collections as older than a dated one', async () => {
+      sandbox.stub(uut, 'fetchUserProjects').resolves([
+        { _id: 'bare-a', tokensType: 1, projectLabel: 'A', owner: 'user-1' },
+        {
+          _id: 'dated',
+          tokensType: 1,
+          projectLabel: 'D',
+          owner: 'user-1',
+          createdAt: '2024-01-01T00:00:00.000Z'
+        },
+        { _id: 'bare-b', tokensType: 1, projectLabel: 'B', owner: 'user-1' }
+      ])
+
+      const r = await uut.resolveCollectionId({
+        base: 'http://x',
+        jwt: 'j',
+        flags: {},
+        session: sessionWithUser(),
+        user: { _id: 'user-1', email: 'a@b.com' }
+      })
+
+      assert.equal(r.projectId, 'dated')
+    })
+
+    it('should name an unowned collection by id when it has no label', async () => {
+      sandbox.stub(uut, 'fetchUserProjects').resolves([
+        { _id: 'p9', tokensType: 1 }
+      ])
+
+      try {
+        await uut.resolveCollectionId({
+          base: 'http://x',
+          jwt: 'j',
+          flags: { collection: 'p9' },
+          session: { JWT: 'j', user: { _id: 'user-1', projects: [] }, projects: [] },
+          user: { _id: 'user-1', email: 'a@b.com' }
+        })
+        assert.fail('expected throw')
+      } catch (e) {
+        assert.include(e.message, 'p9')
+        assert.include(e.message, 'not in your account')
+      }
+    })
+
+    it('should use the collection id when the last NFT has no label', async () => {
+      sandbox.stub(uut, 'fetchUserProjects').resolves([
+        { _id: 'nft-id', tokensType: 1, owner: 'user-1' }
+      ])
+
+      const r = await uut.resolveCollectionId({
+        base: 'http://x',
+        jwt: 'j',
+        flags: {},
+        session: sessionWithUser(),
+        user: { _id: 'user-1', email: 'a@b.com' }
+      })
+
+      assert.equal(r.projectLabel, 'nft-id')
+    })
+
+    it('should initialize session.projects when it is missing', async () => {
+      sandbox.stub(uut, 'fetchUserProjects').resolves([])
+      sandbox.stub(uut.appUtils, 'saveUserData').resolves()
+      sandbox.stub(uut.axios, 'post').resolves({
+        data: {
+          success: true,
+          project: { _id: 'brand-new', projectLabel: 'u' }
+        }
+      })
+
+      const session = {
+        JWT: 'j',
+        user: { _id: 'user-1', email: 'u@example.com', projects: ['keep'] }
+      }
+
+      await uut.resolveCollectionId({
+        base: 'http://x',
+        jwt: 'j',
+        flags: {},
+        session,
+        user: session.user
+      })
+
+      assert.deepEqual(session.projects, ['brand-new'])
+    })
   })
 
   describe('#tusUpload', () => {
@@ -556,6 +783,28 @@ describe('#create-token.js', () => {
 
       assert.equal(name, 'x.png')
       sinon.assert.calledOnce(uut.TusUpload)
+    })
+
+    it('should default the content type for an unknown extension', async () => {
+      sandbox.stub(uut.fs, 'statSync').returns({ size: 1 })
+      sandbox.stub(uut.fs, 'createReadStream').returns({})
+      let filetype
+      sandbox.stub(uut, 'TusUpload').callsFake(function (stream, opts) {
+        filetype = opts.metadata.filetype
+        return {
+          start () {
+            queueMicrotask(() => opts.onSuccess())
+          }
+        }
+      })
+
+      await uut.tusUpload({
+        filePath: '/tmp/asset.bin',
+        endpoint: 'http://e/files',
+        jwt: 'j'
+      })
+
+      assert.equal(filetype, 'application/octet-stream')
     })
 
     it('should reject when Tus onError fires', async () => {
@@ -936,6 +1185,46 @@ describe('#create-token.js', () => {
         assert.equal(result, true)
         sinon.assert.calledTwice(uut.TusUpload)
         sinon.assert.calledTwice(uut.newMacroPayload)
+      } finally {
+        uut.config.inboxGalleryId = inbox
+      }
+    })
+
+    it('should skip the inbox gallery when no gallery id is configured', async () => {
+      const log = sandbox.stub(console, 'log')
+      sandbox.stub(uut.fs, 'existsSync').returns(true)
+      sandbox.stub(uut.fs, 'statSync').returns({ size: 1 })
+      sandbox.stub(uut.appUtils, 'getSessionInfo').resolves({
+        JWT: 'test-jwt',
+        user: { id: 'user-1', email: 'owner@example.com' },
+        projects: ['proj-a']
+      })
+      sandbox.stub(uut, 'resolveCollectionId').resolves({ projectId: 'p', projectLabel: 'L' })
+      sandbox.stub(uut, 'tusUpload').resolves('f.bin')
+      sandbox.stub(uut, 'newMacroPayload')
+        .onFirstCall().resolves({ success: true, metadataId: 'a' })
+        .onSecondCall().resolves({ success: true, metadataId: 'b' })
+      const tokenize = sandbox.stub(uut, 'tokenizePayload').resolves({ success: true, txid: 'tx' })
+
+      const inbox = uut.config.inboxGalleryId
+      uut.config.inboxGalleryId = ''
+      try {
+        const result = await uut.run({
+          ...baseFlags,
+          url: null,
+          description: null,
+          skipGallery: false
+        })
+        assert.equal(result, true)
+        sinon.assert.calledWith(
+          log,
+          sinon.match(/set TOKEN_TIGER_INBOX_GALLERY to enable/)
+        )
+        const customData = tokenize.firstCall.args[2].customData
+        assert.equal(customData.issuerUrl, '')
+        assert.equal(customData.about, '')
+        assert.equal(customData.userData.currentUrl, '')
+        assert.equal(customData.gallery, true)
       } finally {
         uut.config.inboxGalleryId = inbox
       }

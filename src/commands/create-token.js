@@ -510,3 +510,9 @@ class CreateToken {
 }
 
 export default CreateToken
+
+// Exposed for unit tests of branches the command never calls with empty input.
+export {
+  pickLastCollection,
+  resolveProjectOwnerId
+}

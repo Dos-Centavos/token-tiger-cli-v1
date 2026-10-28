@@ -144,7 +144,8 @@ describe('#show-collection-tokens.js', () => {
             { tokenId: 't2', qty: undefined, ticker: 'TK' },
             { tokenId: 't3', symbol: 'SYM' },
             { tokenId: 't4', documentUri: 'https://doc.example/x' },
-            { tokenId: 't5', name: longName }
+            { tokenId: 't5', name: longName },
+            {}
           ]
         }
       })
@@ -166,12 +167,24 @@ describe('#show-collection-tokens.js', () => {
     it('should show empty-state row when token list is empty', async () => {
       sandbox.stub(console, 'log')
       sandbox.stub(uut.appUtils, 'getSessionInfo').resolves(mockSessionCheckBalance)
-      sandbox.stub(uut.axios, 'post').resolves({ data: { tokens: [] } })
+      sandbox.stub(uut.axios, 'post').resolves({ data: {} })
       sandbox.stub(uut.axios, 'get')
 
       const result = await uut.run({
         id: '69fb91a82d63e03eba122f9d'
       })
+
+      assert.equal(result, true)
+      const out = console.log.args.map((a) => a.join(' ')).join('\n')
+      assert.include(out, '(no tokens)')
+    })
+
+    it('should show an empty row when the sharable payload omits tokens', async () => {
+      sandbox.stub(console, 'log')
+      sandbox.stub(uut.appUtils, 'getSessionInfo').resolves(mockSessionCheckBalance)
+      sandbox.stub(uut.axios, 'get').resolves({ data: {} })
+
+      const result = await uut.run({ id: '71554887419447918178334' })
 
       assert.equal(result, true)
       const out = console.log.args.map((a) => a.join(' ')).join('\n')
