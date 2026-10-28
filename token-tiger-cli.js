@@ -7,7 +7,9 @@
 import { Command } from 'commander'
 
 // Local libraries
+import AppendBulkTokens from './src/commands/append-bulk-tokens.js'
 import CheckBalance from './src/commands/check-balance.js'
+import CreateBulkTokens from './src/commands/create-bulk-tokens.js'
 import CreateCollection from './src/commands/create-collection.js'
 import CreateSharableCollection from './src/commands/create-sharable-collection.js'
 import CreateToken from './src/commands/create-token.js'
@@ -15,11 +17,15 @@ import CreateUser from './src/commands/create-user.js'
 import ExportToken from './src/commands/export-token.js'
 import Info from './src/commands/info.js'
 import Login from './src/commands/login.js'
+import ShowBulkBatch from './src/commands/show-bulk-batch.js'
+import ShowBulkJobs from './src/commands/show-bulk-jobs.js'
 import ShowCollectionTokens from './src/commands/show-collection-tokens.js'
 import ShowCollections from './src/commands/show-collections.js'
 
 // Instantiate subcommands
+const appendBulkTokens = new AppendBulkTokens()
 const checkBalance = new CheckBalance()
+const createBulkTokens = new CreateBulkTokens()
 const createCollection = new CreateCollection()
 const createSharableCollection = new CreateSharableCollection()
 const createToken = new CreateToken()
@@ -27,6 +33,8 @@ const createUser = new CreateUser()
 const exportToken = new ExportToken()
 const info = new Info()
 const login = new Login()
+const showBulkBatch = new ShowBulkBatch()
+const showBulkJobs = new ShowBulkJobs()
 const showCollections = new ShowCollections()
 const showCollectionTokens = new ShowCollectionTokens()
 
@@ -71,6 +79,36 @@ program.command('create-token')
   .option('-p, --public', 'mark metadata as publicly available')
   .option('-a, --address <string>', 'optional destination address for tokenization')
   .action(createToken.run)
+
+program.command('create-bulk-tokens')
+  .description('Queue a bulk tokenization batch (upload via Tus, then POST /macro/payload/bulk)')
+  .requiredOption('-m, --manifest <path>', 'JSON manifest describing the batch')
+  .option('-c, --collection <id>', 'collection id; overrides manifest.collection; if omitted, uses your last NFT collection or creates one.')
+  .option('-a, --address <string>', 'default destination address for items without one')
+  .option('--gallery', 'add every item to the API inbox gallery', false)
+  .option('--dry-run', 'validate and print the plan without uploading or queueing', false)
+  .action(createBulkTokens.run)
+
+program.command('append-bulk-tokens')
+  .description('Append items to an existing bulk batch (upload via Tus, then POST .../items)')
+  .requiredOption('-b, --batch <id>', 'batch id to append to')
+  .requiredOption('-m, --manifest <path>', 'JSON manifest describing the items to append')
+  .option('--dry-run', 'validate and print the plan without uploading or queueing', false)
+  .action(appendBulkTokens.run)
+
+program.command('show-bulk-batch')
+  .description('Show one bulk batch, optionally polling until every item finishes')
+  .requiredOption('-b, --batch <id>', 'batch id to inspect')
+  .option('--watch', 'poll until every item is completed or failed', false)
+  .option('--interval <seconds>', 'poll interval in seconds', '15')
+  .option('--timeout <seconds>', 'stop watching after N seconds (0 = no timeout)', '0')
+  .action(showBulkBatch.run)
+
+program.command('show-bulk-jobs')
+  .description('List your bulk tokenization jobs and per-batch status counts')
+  .option('--status <status>', 'filter by queued, processing, completed, or failed')
+  .option('--project <id>', 'filter by collection / project id')
+  .action(showBulkJobs.run)
 
 program.command('export-token')
   .description('Export a token from a collection to an SLP or BCH wallet address')

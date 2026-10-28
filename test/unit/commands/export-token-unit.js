@@ -155,6 +155,17 @@ describe('#export-token.js', () => {
       assert.equal(result, 0)
     })
 
+    it('should log an empty object when the response body is missing', async () => {
+      sandbox.stub(console, 'log')
+      sandbox.stub(uut.appUtils, 'getSessionInfo').resolves(mockSessionCheckBalance)
+      sandbox.stub(uut.axios, 'post').resolves({ data: null })
+
+      const result = await uut.run({ ...FLAGS_BASE })
+
+      assert.equal(result, true)
+      sinon.assert.calledWith(console.log, JSON.stringify({}, null, 2))
+    })
+
     it('should log full response body when result is absent', async () => {
       sandbox.stub(console, 'log')
       sandbox.stub(uut.appUtils, 'getSessionInfo').resolves(mockSessionCheckBalance)
